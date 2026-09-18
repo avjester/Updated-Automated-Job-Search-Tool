@@ -59,22 +59,21 @@ def sanitize_html(html):
 # the CANDIDATE_PROFILE environment variable (a GitHub Actions secret) so
 # personal details never live in the repository. A custom profile must keep
 # this shape — a "WHO THE CANDIDATE IS" section (background, target roles and
-# verticals, home region(s), remote/hybrid/onsite preference per region)
-# followed by a "WATCHLIST COMPANIES" section ending in the company list —
-# because the prompt text that follows it refers back to both. A profile may
-# describe more than one home region with different acceptable arrangements
-# per region (see the HOME REGIONS block in the prompt below).
+# verticals, home region, remote/hybrid/onsite preference) followed by a
+# "WATCHLIST COMPANIES" section ending in the company list — because the
+# prompt text that follows it refers back to both (see the HOME REGION block
+# in the prompt below).
 DEFAULT_PROFILE = """WHO THE CANDIDATE IS
 
-The candidate has 10+ years of experience in Risk Management, spanning Operational Risk and Enterprise Risk (ERM) functions at large organizations. They are looking for Director, Senior Director, or VP level Risk Management, Operational Risk, or Enterprise Risk leadership roles. Target verticals are function-first rather than regulation-driven: financial services, consumer goods, technology, and travel/hospitality all fit the profile equally.
+The candidate is pursuing three distinct but related role identities, each with a different expected share of the opportunities that will actually be available. Identity 1 (~50% of expected opportunities): Director of Strategic Initiatives, Transformation Director, or Chief of Staff, at mission-driven organizations or consulting firms with a social-impact practice. Identity 2 (~30%): Market Intelligence Director or Competitive Intelligence Director, at retail, insights agencies, or consumer products companies. Identity 3 (~20%): CX Insights Director or Experience Strategy Director, at similar organizations with a customer-experience focus.
 
-The candidate is remote-based in Chicago, IL; treat that as their home metro area. They are open to fully remote or hybrid roles.
+The candidate is based in Chicago, IL. Onsite or hybrid roles are a match only if realistically reachable within about a 1-hour public-transit commute from the Loop or Fulton Market. Fully remote roles are a match regardless of company location.
 
 ---
 
 WATCHLIST COMPANIES
 
-American Express, Capital One, Cisco, Coca-Cola, Expedia."""
+Bridgespan Group, Circana, NielsenIQ, Gartner, American Heart Association."""
 
 
 # Approximate published Opus 4.8 rates ($5/$25 per MTok), in USD per token.
@@ -121,16 +120,17 @@ def log_usage(totals):
 
 # Upper bound on pause_turn continuations (the server-side tool loop pauses
 # roughly every 10 tool iterations); a guard against a runaway loop, not a
-# budget — search spend is capped by max_uses on the web_search tool. Left at
-# the original 9-category value: watchlist checks (up to 32 companies), an
-# ATS-wide sweep across six job-board domains, aggregator checks, and a live
-# web_fetch verification per candidate role can still add up to more tool
-# iterations than the search cap alone suggests, so this guard keeps its
-# margin even though the search budget below is much lower. (Previously
-# raised to 18 for a Greenhouse/Workday API cross-check that turned out to be
-# non-functional — see the KNOWN RESIDUAL LIMITATION note above — and
-# reverted here along with removing that check.)
-MAX_PAUSE_CONTINUATIONS = 12
+# budget — search spend is capped by max_uses on the web_search tool. Raised
+# slightly above the single-identity baseline of 12: watchlist/named-org
+# checks (up to 10), three separate per-identity ATS-wide sweeps across six
+# job-board domains each, aggregator checks, transformation-signal screening,
+# and a live web_fetch verification per candidate role can add up to more
+# tool iterations than the search cap alone suggests, given the ATS sweep now
+# runs three times per scan instead of once. (A Greenhouse/Workday API
+# cross-check was tried and removed as non-functional — see the KNOWN
+# RESIDUAL LIMITATION note above — so this value doesn't need to account for
+# that.)
+MAX_PAUSE_CONTINUATIONS = 14
 
 # Full-scan retries when the streaming connection dies mid-read ("peer closed
 # connection", read timeout). The SDK's max_retries doesn't cover these — it
@@ -307,38 +307,51 @@ def get_newsfeed():
 
 You must use live web search for every item in this report. Do not rely on your training data for any factual claim about a company or a role. If you cannot find a live, dated source for an item, do not include it. You also have a web_fetch tool: use it to open every candidate job posting directly and confirm from the fetched page — never from a search snippet — that the role is still live and open to applications.
 
-You are a research assistant supporting a Risk Management executive — referred to throughout as "the candidate" — who is actively searching for a Senior, Director, or VP+ level role.
+You are a research assistant supporting a Strategy, Insights, and Customer Experience executive — referred to throughout as "the candidate" — who is actively searching for a Director-to-VP level role across three related but distinct role identities, described below.
 
 ---
 
 {profile}
 
-This watchlist is a starting point, not a boundary. The search is profile-driven, not list-driven: any company in the candidate's target verticals is in scope regardless of whether it appears above. Expect most of the best findings each week to come from companies NOT on the watchlist.
+This watchlist is a starting point, not a boundary. The search is profile-driven, not list-driven: any organization matching one of the three identities' own target industries is in scope regardless of whether it appears above. Expect most of the best findings each week to come from organizations NOT on the watchlist.
 
 ---
 
 OPEN ROLES SCAN
-ROLE TITLES IN SCOPE. Search for Senior, Director, Senior Director, VP, SVP, and Head of level roles across the full family of titles this function goes by, not just the literal string "Risk Management": Risk Management, Operational Risk, Enterprise Risk (ERM), Non-Financial Risk, Business Risk, Operational Resilience, and second-line Risk Oversight. At startups and growth-stage companies, "Head of Risk" or "Head of X Risk" is typically Director-to-VP equivalent — treat it as in scope.
+HOME REGION. The candidate is based in Chicago, IL. Onsite or hybrid roles count as a location match only if they are realistically reachable within about a 1-hour public-transit commute from the Loop or Fulton Market — do not treat every posting tagged "Chicago" as a match; a car-dependent suburban office park is not, even if the posting's city field says Chicago or a Chicago suburb. A fully remote role counts as a location match regardless of company location. When a posting's specific office location isn't stated precisely enough to judge transit reachability, note that uncertainty rather than assuming a match.
 
-HOME REGIONS. The candidate has two home regions with different acceptable arrangements, not one home metro area:
-- Chicago, IL metro: onsite, hybrid, or remote roles based here all count as a location match.
-- EU/UK: the candidate has a second home in Milan, Italy, but this is not a metro they can commute to daily — only fully remote roles based in or open to the EU/UK count as a location match here. An onsite or hybrid role physically in Milan or elsewhere in the EU/UK does NOT match this region; treat it like any other out-of-area onsite role.
-- A role fully remote with no geographic restriction (e.g. "remote — US" when the candidate is US-based, or unrestricted global remote) also counts as a location match regardless of company location.
-Wherever this prompt says "home region(s)" below, it means this definition.
+TARGET IDENTITIES. The candidate is pursuing three distinct but related role identities, each with a different expected share of the opportunities that will actually be available, and each defined by its own titles AND its own target industries — do not treat this as one undifferentiated title family, and do not apply one identity's industry list to another identity's titles.
 
-DISCOVERY STRATEGY. The search is profile-driven: most qualifying roles each week will be at companies not on the watchlist, so do not simply iterate the watchlist company by company. Run these discovery passes, in this order:
+IDENTITY 1 — STRATEGY & TRANSFORMATION LEADER (~50% of expected opportunities; the primary search focus, and the tie-breaker when ranking comparably strong roles across identities)
+Titles: Director of Strategic Initiatives, Transformation Director, Chief of Staff, and close variants such as Head of Strategy & Transformation, VP of Strategic Initiatives, or Director/Head of the Chief of Staff Office.
+Target organizations: mission-driven organizations scaling up or undergoing transformation; "responsible brands" (a genuine public sustainability, ESG, or social-responsibility positioning — not just marketing language, use judgment); consulting firms with a social-impact focus (e.g. Bridgespan Group, Civic Consulting Alliance, FSG) or traditional consulting firms with a public-sector, nonprofit, or social-impact practice.
+Priority sector: healthcare and life sciences — hospitals and health systems, public health and community health organizations, healthcare technology, and healthcare nonprofits (e.g. American Heart Association, Alzheimer's Association).
+Exploratory sectors (include if found, but flag as exploratory — these are lower-confidence than the priority sector above): education technology, civic technology, AI.
 
-1. Watchlist companies: check the careers pages of the watchlist companies above for openings matching the role titles in scope.
-2. ATS-wide title sweeps: run site-restricted web searches for the role titles above directly across the major applicant-tracking-system domains — boards.greenhouse.io, jobs.lever.co, jobs.ashbyhq.com, myworkdayjobs.com, jobs.smartrecruiters.com, apply.workable.com — for example: site:boards.greenhouse.io "Director" "Operational Risk". This is the highest-yield way to find companies the candidate has never heard of. Filter the hits to companies matching the candidate's target verticals.
-3. Job aggregators for discovery: LinkedIn Jobs, Built In Chicago and remote, Wellfound, and Welcome to the Jungle/Otta for EU/UK-remote openings. Aggregators are for discovery only — always follow through to the underlying company posting and cite that as the Source, never the aggregator page.
-4. IPO pipeline: scan recent S-1 filings on SEC EDGAR and credible IPO-pipeline coverage for companies in the candidate's target verticals approaching public markets within 18 months — these are high-signal hiring windows where Risk Management investment is most active — and check those companies' careers pages.
+IDENTITY 2 — INTELLIGENCE & INSIGHTS LEADER (~30% of expected opportunities)
+Titles: Market Intelligence Director, Competitive Intelligence Director, and close variants such as Head of Market Intelligence or Director of Competitive Insights.
+Target organizations, in rough priority order: retail (preferably responsible brands); insights agencies (e.g. Circana, NielsenIQ, Kantar, Ipsos, Gartner); brand agencies; consumer products companies (preferably responsible brands); healthcare and life sciences, excluding insurance.
 
-Aim for breadth of companies over exhaustive depth on any one company. A weekly report that surfaces 8 to 15 verified roles across many companies is more useful than 3 roles from the watchlist plus an exhausted search budget.
+IDENTITY 3 — EXPERIENCE & CUSTOMER STRATEGY LEADER (~20% of expected opportunities)
+Titles: CX Insights Director, Experience Strategy Director, and close variants such as Head of Customer Experience Strategy or Director of CX Insights.
+Target organizations, in rough priority order: retail (preferably responsible brands); insights agencies (same list as Identity 2); brand agencies; consumer products companies (preferably responsible brands); consulting firms, most likely those with a digital CX transformation practice; healthcare and life sciences, excluding insurance.
+
+For every confirmed role, state which identity it matches. If a role plausibly fits more than one identity, note that too — it's a positive signal, not something to resolve by picking just one.
+
+DISCOVERY STRATEGY. The search is profile-driven: most qualifying roles each week will be at organizations not on the watchlist, so do not simply iterate the watchlist company by company. Run these discovery passes, in this order:
+
+1. Watchlist companies: check the careers pages of the watchlist companies above for openings matching any of the three identities' titles.
+2. Named-organization checks: beyond the formal watchlist, directly check the careers pages of the specific organizations named in the identity descriptions above (e.g. Bridgespan Group, Civic Consulting Alliance, FSG for Identity 1; Circana, NielsenIQ, Kantar, Ipsos, Gartner for Identities 2 and 3), since these are known-relevant targets even though they weren't formalized into the watchlist.
+3. ATS-wide title sweeps, run separately per identity so results aren't diluted — for example: site:boards.greenhouse.io "Director" "Strategic Initiatives" for Identity 1, site:boards.greenhouse.io "Director" "Market Intelligence" for Identity 2, site:boards.greenhouse.io "Director" "Customer Experience" for Identity 3 — across the major applicant-tracking-system domains: boards.greenhouse.io, jobs.lever.co, jobs.ashbyhq.com, myworkdayjobs.com, jobs.smartrecruiters.com, apply.workable.com. This is the highest-yield way to find organizations the candidate has never heard of. Filter each identity's hits to organizations matching that identity's own target industries — not another identity's.
+4. Job aggregators for discovery: LinkedIn Jobs, Built In Chicago and remote, Wellfound, and Welcome to the Jungle/Otta. Aggregators are for discovery only — always follow through to the underlying organization's posting and cite that as the Source, never the aggregator page.
+5. Transformation-signal screening: search for organizations in the candidate's target industries with a recent, dated signal that predicts a Strategy/Transformation, Chief of Staff, Intelligence, or CX leadership hire — a new CEO or executive transition, a publicly announced strategic plan or transformation initiative, or a major funding round or scaling announcement at a mission-driven organization. Check those organizations' careers pages and the ATS domains above for their openings specifically. Weight this pass toward Identity 1's industries, since this signal maps most directly to that identity's titles.
+
+Aim for breadth of organizations over exhaustive depth on any one. A weekly report that surfaces 8 to 15 verified roles across many organizations is more useful than 3 roles from the watchlist plus an exhausted search budget.
 
 PRESENT ROLES IN TWO TIERS. Search broadly, but do not present the results as one flat list — breadth is valuable for discovery but creates noise when every role is shown with equal weight. Split the confirmed roles into two labeled sub-sections, strongest first within each:
 
-- "Strong fits": roles where title/function, seniority (Senior, Director, Senior Director, VP, SVP, or Head of level), AND vertical all clearly match the candidate's profile, and the location matches one of the candidate's home regions as defined above (Chicago metro in any arrangement, or fully remote EU/UK, or unrestricted remote). These are the roles they should look at first. A role can be a Strong fit even if it's "staleness/completeness unconfirmed" per the rule below — that status affects what you caveat, not which tier it belongs in.
-- "Broader — worth a look": real, verified, currently-live roles that are a stretch on one dimension — seniority slightly off, vertical adjacent rather than core, or location outside both home regions with an unclear or onsite arrangement (including onsite/hybrid roles physically in Milan or elsewhere in the EU/UK, which do not satisfy the EU/UK home region on their own). Include these for discovery value, but cap this tier at the 8 strongest; if more than 8 qualify, keep the 8 best fits to the candidate's profile and drop the rest rather than padding the list.
+- "Strong fits": roles where title/function AND target industries clearly match one identity's own definition (seniority: Director, Senior Director, VP, Head of, or Chief level), and the location matches the candidate's home region as defined above (Chicago within transit reach, or unrestricted remote). These are the roles they should look at first. A role can be a Strong fit even if it's "staleness/completeness unconfirmed" per the rule below — that status affects what you caveat, not which tier it belongs in. When ranking within this tier, an Identity 1 role edges out an equally strong Identity 2 or 3 role, reflecting its larger expected share of opportunities.
+- "Broader — worth a look": real, verified, currently-live roles that are a stretch on one dimension — seniority slightly off, industry adjacent to an identity's list rather than core, title matching one identity but industry matching another (a genuine cross-identity stretch, not an error), location outside the home region, or an onsite/hybrid role whose transit reachability from the Loop or Fulton Market couldn't be confirmed. Include these for discovery value, but cap this tier at the 8 strongest; if more than 8 qualify, keep the 8 best fits to the candidate's profile and drop the rest rather than padding the list.
 
 Do not relax the CORE liveness bar for either tier — a role must still be fetched and show its exact title, description, and an active apply control, with no closed/expired/redirect/error signal, to appear in either. That bar is unchanged. What has changed is that a missing or stale date, or a missing secondary field, no longer forces exclusion on its own — see "staleness/completeness unconfirmed" below. Tiering is about ranking what you found, never about lowering the CORE bar for what counts as verified. If a role is a genuine strong fit, it goes in "Strong fits" even if it is the only role this week.
 
@@ -360,7 +373,7 @@ Do NOT add to that hard-reject list: a missing or absent posting/last-refreshed 
 
 For each confirmed role, provide the role title, company, and a direct link to the role-specific posting itself (not a search results page, careers homepage, or job-aggregator listing). Report the posting or last-refreshed date exactly as it appears on the page; if no date is shown, or the only available date signal is stale/unreliable (see above), say so plainly rather than omitting the field or guessing — this is a "staleness/completeness unconfirmed" case, not a reason to exclude the role. While you have the posting open to verify it is live, also capture the stated compensation range if one is present — US postings frequently disclose it under pay-transparency laws — and report it exactly as written; if the page doesn't show location, compensation, or another expected field, state "Not stated on posting" for that field rather than excluding the role over it. If the company is in IPO preparation or publicly known to be approaching IPO within 18 months, flag this prominently — it is a high-priority hiring signal. If you cannot confirm a single live role this week, output: "Nothing confirmed this week."
 
-For every confirmed role, note its location and work arrangement (remote, hybrid, or onsite) as stated on the posting. If the role does not match one of the candidate's home regions as defined above — this includes an onsite or hybrid role physically located in Milan or elsewhere in the EU/UK, since only fully remote roles satisfy that region — additionally flag the company's current work-location posture: whether it has recently announced or enforced a significant Return-to-Office (RTO) mandate, or whether it is genuinely remote-friendly. Base this on dated, verifiable sources — the posting's own remote/location terms, a company announcement, or recent news coverage — and say so briefly if you cannot confirm either way. This flag is informational only: do NOT exclude, downrank, or filter out an otherwise relevant out-of-region role because of an RTO push or because the work arrangement is unclear. The candidate still wants to see these roles; the flag simply tells them what they would be walking into. Roles matching one of the candidate's home regions do not need the RTO research.
+For every confirmed role, note its location and work arrangement (remote, hybrid, or onsite) as stated on the posting. If the role does not match the candidate's home region as defined above, additionally flag the organization's current work-location posture: whether it has recently announced or enforced a significant Return-to-Office (RTO) mandate, or whether it is genuinely remote-friendly. Base this on dated, verifiable sources — the posting's own remote/location terms, an organization's announcement, or recent news coverage — and say so briefly if you cannot confirm either way. This flag is informational only: do NOT exclude, downrank, or filter out an otherwise relevant out-of-region role because of an RTO push or because the work arrangement is unclear. The candidate still wants to see these roles; the flag simply tells them what they would be walking into. Roles matching the candidate's home region do not need the RTO research.
 
 ---
 
@@ -374,15 +387,16 @@ OUTPUT FORMAT
 
 Begin your response with the opening HTML tag. Do not narrate your search process, describe your methodology, summarize what you are about to do, or include any preamble or transitional language before the HTML output. The report starts with the HTML — nothing before it.
 
-At the top of the report, flag the three strongest roles overall (by fit to the candidate's profile, with named watchlist-company involvement breaking ties), wrapped in <div class="highlights">…</div>, using the same item fields as below.
+At the top of the report, flag the three strongest roles overall (by fit to the candidate's profile, with Identity 1 breaking ties against equally strong Identity 2 or 3 roles, and named watchlist/named-organization involvement breaking any remaining ties), wrapped in <div class="highlights">…</div>, using the same item fields as below.
 
 For each role, provide:
+- Identity: which of the three target identities this role matches (Strategy & Transformation, Intelligence & Insights, or Experience & Customer Strategy); note a second identity too if the role plausibly fits more than one.
 - What happened: one to two sentences, factual and specific.
 - Why it matters to the candidate: one to two sentences on how this fits the job search.
 - Recommended action: a specific next step and, where relevant, a time window.
-- Fit: one sentence stating why this role fits the candidate's profile and the single biggest caveat or stretch (e.g. "Core Enterprise Risk leadership at a growth-stage fintech; caveat: onsite NYC with no stated remote option"). If the role is "staleness/completeness unconfirmed" (see verification rules above), that IS the caveat to lead with here (e.g. "caveat: posting shows no date, so freshness beyond the active apply control could not be confirmed"), even if there's also a location/seniority stretch — the candidate needs to know to double-check this one before investing time. This is what lets the candidate skim-accept or skim-reject in one read.
-- Location and work arrangement: the role's location and whether it is remote, hybrid, or onsite. For roles outside both of the candidate's home regions (Chicago metro, or fully remote EU/UK), also flag whether the company has a recent Return-to-Office (RTO) push or is remote-friendly, with the basis for that flag. This is informational and never a reason to omit the role.
-- IPO status (if applicable): whether the company is in IPO preparation or approaching IPO within 18 months, with the basis (announced plans, S-1 filing, recent funding, public news).
+- Fit: one sentence stating why this role fits the candidate's profile and the single biggest caveat or stretch (e.g. "Core Chief of Staff mandate at a mission-driven healthcare nonprofit; caveat: onsite with an unclear transit-reachable office location"). If the role is "staleness/completeness unconfirmed" (see verification rules above), that IS the caveat to lead with here (e.g. "caveat: posting shows no date, so freshness beyond the active apply control could not be confirmed"), even if there's also a location/seniority stretch — the candidate needs to know to double-check this one before investing time. This is what lets the candidate skim-accept or skim-reject in one read.
+- Location and work arrangement: the role's location and whether it is remote, hybrid, or onsite. For roles outside the candidate's home region, also flag whether the company has a recent Return-to-Office (RTO) push or is remote-friendly, with the basis for that flag. This is informational and never a reason to omit the role.
+- Transformation signal (if applicable): any dated, verifiable signal that predicted this opening — a new CEO or leadership transition, an announced strategic plan, or a major funding/scaling announcement — with its basis. Omit this field entirely when no such signal was found; it's a bonus, not a requirement.
 - Compensation: the pay range exactly as stated on the posting you fetched, including what it covers (base, on-target earnings, bonus, equity) if specified — e.g. "$180K–$220K base + bonus." If the posting shows no range, write "Not disclosed on posting"; you may add a market estimate ONLY if you find a dated, citable public source and label it clearly as an estimate with that source. Never invent or guess a number from general knowledge.
 - Source: direct link to the role-specific posting itself.
 
@@ -392,10 +406,10 @@ If web search returns no results for a specific watchlist company, do not infer 
 
 Distinguish WHY a posting was excluded, because the reasons carry different meaning for the candidate:
 - Confirmed dead: the fetched page explicitly shows the role is closed, filled, expired, or redirects to a generic careers/search page — real evidence the specific role is gone. Do not add these to the manual check list; the exclusion itself is the useful information.
-- Fetch could not render the content: the page returned successfully but the fetched content is empty, near-empty, or generic boilerplate with no role-specific title/description/apply-control visible — the signature of a client-side-rendered (JavaScript-heavy) page rather than a confirmed-dead one. This is a tooling limitation, not evidence the role is gone — a real, live role may be sitting behind that exact page. Track every company/platform this happens for.
+- Fetch could not render the content: the page returned successfully but the fetched content is empty, near-empty, or generic boilerplate with no role-specific title/description/apply-control visible — the signature of a client-side-rendered (JavaScript-heavy) page rather than a confirmed-dead one. This is a tooling limitation, not evidence the role is gone — a real, live role may be sitting behind that exact page. Track every organization/platform this happens for.
 - Staleness/completeness unconfirmed is NOT an exclusion category at all — it's not one of the two buckets above. A role with a missing/stale date or a missing secondary field, but a fully rendered page and a real, active apply control, is included in the main report (Strong fits or Broader, per its own merits) with the uncertainty stated in its Fit field, per the verification rules above. Do not list it here in COVERAGE NOTES and do not also list it in the main report — it belongs in the main report only.
 
-MANUAL CHECK LIST. Compile every company from this run that hit the "fetch could not render the content" case above into a single deduplicated list (one entry per company, even if it happened on multiple postings or platforms for that company this week). For each entry, give: the company name, the platform/domain where this happened if identifiable (e.g. Workday, Ashby, or the company's own site), and a direct link to that company's general careers/job-search landing page (not the specific unrenderable posting, since that's exactly the link that couldn't be verified) so the candidate can check it by hand. If no companies hit this case this week, state "No fetch-rendering issues this week" rather than omitting the section.
+MANUAL CHECK LIST. Compile every organization from this run that hit the "fetch could not render the content" case above into a single deduplicated list (one entry per organization, even if it happened on multiple postings or platforms for that organization this week). For each entry, give: the organization's name, the platform/domain where this happened if identifiable (e.g. Workday, Ashby, or the organization's own site), and a direct link to that organization's general careers/job-search landing page (not the specific unrenderable posting, since that's exactly the link that couldn't be verified) so the candidate can check it by hand. If no organizations hit this case this week, state "No fetch-rendering issues this week" rather than omitting the section.
 
 FORMAT AND MARKUP
 
@@ -465,19 +479,20 @@ Do not use markdown. No inline JavaScript, no images, no tables. Keep nesting sh
                 "tools": [
                     # max_uses caps search spend at PRICE_WEB_SEARCH * max_uses
                     # per run. Fetches are billed only as input tokens.
-                    # Sized for a two-region (Chicago + EU/UK), single-category
-                    # (roles-only) scan: up to 32 watchlist-company checks, an
-                    # ATS-wide sweep across 6 job-board domains with a few
-                    # title variants each, aggregator checks across both
-                    # regions, and IPO-pipeline screening, plus headroom for
-                    # query reformulation. Raised from 60 after the first live
-                    # run logged the IPO-pipeline pass being skipped entirely
-                    # for running out of budget ("not completed ... due to
-                    # search-budget limits" in that run's coverage notes) —
-                    # keep watching the per-run search count logged below
-                    # against this cap and raise further if it's still being
-                    # hit.
-                    {"type": "web_search_20260209", "name": "web_search", "max_uses": 80},
+                    # Sized for a single-region (Chicago), single-category
+                    # (roles-only) scan across THREE separate target identities:
+                    # up to 10 watchlist/named-organization checks, three
+                    # separate ATS-wide sweeps (one per identity, each across 6
+                    # job-board domains with a few title variants), aggregator
+                    # checks, and transformation-signal screening, plus headroom
+                    # for query reformulation. Set higher than a single-identity
+                    # scan specifically because the ATS sweep runs three times
+                    # instead of once — watch the per-run search count logged
+                    # below against this cap and adjust; if it's regularly
+                    # landing near the ceiling, a pass (likely transformation-
+                    # signal screening, since it runs last) is probably getting
+                    # cut off.
+                    {"type": "web_search_20260209", "name": "web_search", "max_uses": 100},
                     {"type": "web_fetch_20260209", "name": "web_fetch"},
                 ],
                 "messages": messages,
